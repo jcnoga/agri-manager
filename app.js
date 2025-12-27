@@ -11,17 +11,16 @@ window.app = {
         appId: 'app_fazenda_principal_01', 
         
         // Coloque suas credenciais do Firebase aqui
-		import { initializeApp } from "firebase/app";
-        const firebaseConfig = {
+        // NOTA: Removemos os 'imports' e 'const' pois estamos dentro de um objeto.
+        // A chave deve se chamar 'firebase' para ser lida corretamente pelo app.cloud.init()
+        firebase: {
           apiKey: "AIzaSyAY06PHLqEUCBzg9SjnH4N6xe9ZzM8OLvo",
           authDomain: "projeto-bfed3.firebaseapp.com",
           projectId: "projeto-bfed3",
           storageBucket: "projeto-bfed3.firebasestorage.app",
           messagingSenderId: "785289237066",
           appId: "1:785289237066:web:78bc967e8ac002b1d5ccb3"
-};
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+        }
     },
 
     // --- ESTADO GLOBAL ---
@@ -33,6 +32,8 @@ const app = initializeApp(firebaseConfig);
         currentReportType: null,
         isOnline: navigator.onLine // Monitora status de conexão
     },
+    
+    // ... (o restante do código permanece inalterado)
 
     // --- MÓDULO DE NUVEM (NOVO - SINCRONIZAÇÃO) ---
     cloud: {
