@@ -10,9 +10,7 @@ window.app = {
         // Altere este ID se for implantar um segundo app no mesmo projeto Firebase.
         appId: 'app_fazenda_principal_01', 
         
-        // Coloque suas credenciais do Firebase aqui
-        // NOTA: Removemos os 'imports' e 'const' pois estamos dentro de um objeto.
-        // A chave deve se chamar 'firebase' para ser lida corretamente pelo app.cloud.init()
+        // CORREÇÃO: Estrutura de objeto correta para o Firebase Compat
         firebase: {
           apiKey: "AIzaSyAY06PHLqEUCBzg9SjnH4N6xe9ZzM8OLvo",
           authDomain: "projeto-bfed3.firebaseapp.com",
@@ -32,16 +30,21 @@ window.app = {
         currentReportType: null,
         isOnline: navigator.onLine // Monitora status de conexão
     },
-    
-    // ... (o restante do código permanece inalterado)
 
-    // --- MÓDULO DE NUVEM (NOVO - SINCRONIZAÇÃO) ---
+    // --- MÓDULO DE NUVEM (SINCRONIZAÇÃO) ---
     cloud: {
         db: null,
         auth: null,
         init() {
             try {
+                // Verifica se firebase já está definido (via CDN no HTML)
+                if (typeof firebase === 'undefined') {
+                    console.warn("SDK do Firebase não encontrado. Rodando em modo Offline.");
+                    return;
+                }
+
                 if (!firebase.apps.length) {
+                    // Inicializa usando o objeto corrigido em app.config.firebase
                     firebase.initializeApp(app.config.firebase);
                 }
                 this.db = firebase.firestore();
@@ -53,6 +56,8 @@ window.app = {
                         console.log("Firebase: Conectado como", user.email);
                         // Ao conectar, sincroniza do servidor para o local (Pull)
                         this.syncDown();
+                    } else {
+                        console.log("Firebase: Desconectado");
                     }
                 });
                 console.log(`AgriManager: Cloud iniciada para App ID: ${app.config.appId}`);
@@ -124,7 +129,6 @@ window.app = {
     },
 
     // --- CAMADA DE DADOS (LOCALSTORAGE) ---
-    // Mantida integralmente para garantir funcionamento offline e velocidade
     db: {
         schema: {
             settings: {
@@ -249,9 +253,6 @@ window.app = {
         },
 
         seedDemoData() {
-            // ... (Mantém o código original do seedDemoData integralmente) ...
-            // OBS: Apenas vou abreviar aqui para economizar espaço na resposta, 
-            // mas no arquivo real mantenha todo o conteúdo original desta função.
             let data = JSON.parse(localStorage.getItem('agri_data'));
             const dId = () => 'demo_' + Math.floor(Math.random() * 100000);
             const rItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -263,17 +264,21 @@ window.app = {
                 { name: 'Agro Demo Tech', owner: 'Roberto Demo', area: 5000, location: 'Mato Grosso' },
                 { name: 'Fazenda Vale Verde', owner: 'Lúcia Demo', area: 800, location: 'Minas Gerais' }
             ];
-            demoFarms.forEach(f => { f.id = dId(); this.save('farms', f); }); // Alterado para usar this.save para ativar sync
+            demoFarms.forEach(f => { f.id = dId(); this.save('farms', f); });
 
-            // Gera Plots, Crops, Machines, etc usando save() para garantir sync
-            // ... (Lógica de geração de dados demo continua aqui chamando this.save para cada item) ...
-            
+            // Demo básico para outras tabelas
+            const machines = [
+                { name: 'Trator JD 7200', type: 'Máquina', costPerHour: 150, currentHour: 500, maintenanceInterval: 100 },
+                { name: 'Plantadeira 12L', type: 'Implemento', costPerHour: 0, currentHour: 0, maintenanceInterval: 0 }
+            ];
+            machines.forEach(m => { m.id = dId(); this.save('machinery', m); });
+
             alert('Dados de demonstração adicionados com sucesso! (Sincronizando...)');
             location.reload();
         }
     },
 
-    // --- SISTEMA DE LICENCIAMENTO (Mantido Integralmente) ---
+    // --- SISTEMA DE LICENCIAMENTO ---
     license: {
         constA: 13, constB: 9, constC: 1954,
         checkStatus() {
@@ -342,7 +347,7 @@ window.app = {
         }
     },
 
-    // --- SISTEMA DE ALERTAS (Mantido Integralmente) ---
+    // --- SISTEMA DE ALERTAS ---
     system: {
         init() { this.restartAlertLoop(); },
         restartAlertLoop() {
@@ -430,11 +435,6 @@ window.app = {
                 document.getElementById('user-display').innerText = app.state.currentUser.name;
                 app.system.init(); 
                 app.router.go('dashboard');
-                
-                // Se for sessão Firebase, garante que o objeto Auth também esteja sync
-                if (app.state.currentUser.provider === 'firebase' && app.cloud.auth) {
-                   // A API observer do Firebase no cloud.init cuida do resto
-                }
             } else {
                 document.getElementById('auth-screen').style.display = 'flex';
                 document.getElementById('app-layout').style.display = 'none';
@@ -442,6 +442,20 @@ window.app = {
                 this.switchView('login');
             }
         },
+
+        // CORREÇÃO: Função auxiliar para verificar status do Firebase solicitado
+        getFirebaseStatus() {
+            if (app.cloud.auth) {
+                const user = app.cloud.auth.currentUser;
+                if (user) {
+                    console.log(`✅ Firebase Conectado: ${user.email} (UID: ${user.uid})`);
+                    return user;
+                }
+            }
+            console.log("❌ Firebase: Nenhum usuário conectado na nuvem.");
+            return null;
+        },
+
         switchView(viewName) {
             document.querySelectorAll('.auth-view').forEach(el => el.classList.remove('active'));
             document.getElementById(`view-${viewName}`).classList.add('active');
@@ -577,7 +591,7 @@ window.app = {
         }
     },
 
-    // --- ROTEAMENTO (Mantido Integralmente) ---
+    // --- ROTEAMENTO ---
     router: {
         go(route) {
             if (!app.license.checkStatus()) return;
@@ -590,7 +604,6 @@ window.app = {
             const container = document.getElementById('content-area');
             const title = document.getElementById('page-title');
 
-            // Mapeamento de rotas inalterado
             switch(route) {
                 case 'dashboard': title.innerText = 'Dashboard Geral'; app.ui.renderDashboard(container); break;
                 case 'financeiro': title.innerText = 'Gestão Financeira'; app.ui.renderFinancials(container); break;
@@ -610,7 +623,7 @@ window.app = {
         }
     },
 
-    // --- UI (Mantido Integralmente) ---
+    // --- UI ---
     ui: {
         toggleSidebar() { document.querySelector('aside').classList.toggle('open'); },
         closeModal() { document.getElementById('generic-modal').style.display = 'none'; },
@@ -649,9 +662,7 @@ window.app = {
             reader.readAsText(file);
         },
 
-        // --- Resto dos métodos UI permanecem inalterados ---
         getReportData(type) {
-            // ... (Código original inalterado) ...
             let headers = [], body = [], title = '';
             
             const entityMap = {
@@ -692,7 +703,6 @@ window.app = {
         },
 
         getEntityColumns(entity) {
-            // ... (Código original inalterado) ...
             switch(entity) {
                 case 'farms': return { headers: ['Nome', 'Proprietário', 'Área', 'Local'], fields: ['name', 'owner', 'area', 'location'] };
                 case 'plots': return { headers: ['Nome', 'Fazenda', 'Área', 'Solo', 'Status'], fields: ['name', (i)=>app.db.getById('farms', i.farmId)?.name, 'area', 'soilType', 'status'] };
@@ -710,7 +720,6 @@ window.app = {
         },
 
         generatePDF(type, returnBlob = false) {
-            // ... (Código original inalterado) ...
             const { jsPDF } = window.jspdf; 
             const doc = new jsPDF();
             const data = this.getReportData(type);
@@ -746,7 +755,6 @@ window.app = {
         exportEntityPDF(entity) { this.loadReportView(entity); },
 
         exportEntityDOCX(type) {
-            // ... (Código original inalterado) ...
              const data = this.getReportData(type);
             let tableRows = data.body.map(row => {
                 let tds = row.map(val => `<td>${val || '-'}</td>`).join('');
@@ -770,7 +778,6 @@ window.app = {
         },
 
         loadReportView(type) {
-            // ... (Código original inalterado) ...
             app.state.currentReportType = type;
             const container = document.getElementById('report-content-area') || document.getElementById('content-area');
             const data = this.getReportData(type);
@@ -814,7 +821,6 @@ window.app = {
         },
 
         toggleReportMode(mode) {
-            // ... (Código original inalterado) ...
             document.getElementById('btn-view-list').className = mode === 'list' ? 'btn btn-sm btn-active' : 'btn btn-sm btn-outline';
             document.getElementById('btn-view-pdf').className = mode === 'pdf' ? 'btn btn-sm btn-active' : 'btn btn-sm btn-outline';
             
@@ -832,7 +838,6 @@ window.app = {
         },
 
         renderReports(container) {
-            // ... (Código original inalterado) ...
              const sum = this.getFinancialSummary();
             
             container.innerHTML = `
@@ -881,7 +886,6 @@ window.app = {
         },
 
         renderDashboard(container) {
-            // ... (Código original inalterado) ...
              const farms = app.db.get('farms');
             const financial = app.db.get('financials');
             const lic = app.db.getLicense();
@@ -907,7 +911,6 @@ window.app = {
         },
 
         initCharts(prodData, finData) {
-            // ... (Código original inalterado) ...
             const income = finData.filter(x=>x.type==='income').reduce((acc,x)=>acc+Number(x.value),0);
             const expense = finData.filter(x=>x.type==='expense').reduce((acc,x)=>acc+Number(x.value),0);
             new Chart(document.getElementById('chartFinancial'), { type: 'doughnut', data: { labels: ['Receitas', 'Despesas'], datasets: [{ data: [income, expense], backgroundColor: ['#388e3c', '#d32f2f'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Balanço Financeiro' } } } });
@@ -915,7 +918,6 @@ window.app = {
         },
 
         renderFinancials(container) {
-            // ... (Código original inalterado) ...
             const data = app.db.get('financials');
             let html = `<div class="d-flex"><div><input type="text" placeholder="Buscar..." class="form-control" style="width: 250px;" onkeyup="app.ui.filterTable(this)"></div>
                     <div><button class="btn btn-outline" onclick="app.ui.exportEntityPDF('financials')" title="PDF"><i class="fas fa-file-pdf"></i></button><button class="btn btn-outline" onclick="app.ui.exportEntityDOCX('financials')" title="DOCX"><i class="fas fa-file-word"></i></button><button class="btn btn-primary" onclick="app.ui.openForm('financials')"><i class="fas fa-plus"></i> Novo Lançamento</button></div></div>
@@ -930,7 +932,6 @@ window.app = {
         },
 
         renderEntityList(container, entityKey, entityName, headers, fields) {
-            // ... (Código original inalterado) ...
             const data = app.db.get(entityKey);
             const btnLabel = entityKey === 'stock_movements' ? 'Nova Movimentação' : `Novo ${entityName}`;
             const btnIcon = entityKey === 'stock_movements' ? 'fas fa-exchange-alt' : 'fas fa-plus';
@@ -989,7 +990,7 @@ window.app = {
                         </form>
                     </div>
 
-                    <!-- CLOUD / APP INFO (NOVO) -->
+                    <!-- CLOUD / APP INFO -->
                     <div class="card" style="max-width: 600px; margin: 0 auto; width: 100%;">
                         <h3><i class="fas fa-cloud"></i> Status da Nuvem</h3>
                         <p style="margin: 1rem 0; font-size:0.9rem;">
@@ -1038,7 +1039,6 @@ window.app = {
                 </div>`;
         },
 
-        // --- MÉTODOS DE UI (Mantidos integralmente) ---
         generateReqCodeOnly() {
             const code = app.license.generateCode();
             document.getElementById('req-code').value = code;
@@ -1088,7 +1088,6 @@ window.app = {
         },
 
         getFinancialSummary() {
-            // ... (Código original inalterado) ...
             const financials = app.db.get('financials');
             const summary = { income: {}, expense: {}, totalIncome: 0, totalExpense: 0 };
             financials.forEach(f => {
@@ -1105,7 +1104,6 @@ window.app = {
         },
 
         filterTable(input) {
-            // ... (Código original inalterado) ...
             const filter = input.value.toUpperCase();
             const tr = document.getElementById("dataTable").getElementsByTagName("tr");
             for (let i = 1; i < tr.length; i++) {
@@ -1128,7 +1126,6 @@ window.app = {
         },
 
         calcCycleCost() {
-            // ... (Código original inalterado) ...
             const machSelect = document.getElementById('cycle-machine-select');
             const hoursInput = document.getElementById('cycle-hours-input');
             const costInput = document.getElementById('cycle-cost-input');
@@ -1145,7 +1142,6 @@ window.app = {
         },
 
         toggleFinancialMachineFields(select) {
-            // ... (Código original inalterado) ...
             const container = document.getElementById('financial-machine-fields');
             const valInput = document.getElementsByName('value')[0];
             if (select.value === 'Horas de Máquina') {
@@ -1164,7 +1160,6 @@ window.app = {
             }
         },
         calcMachineCost() {
-            // ... (Código original inalterado) ...
             const select = document.getElementById('fin-machine-select');
             const machineId = select.value;
             app.ui.saveSelectedMachine(select); 
@@ -1180,7 +1175,6 @@ window.app = {
         },
         
         openForm(entity, id = null) {
-            // ... (Mantém a lógica completa do formulário original - apenas resumido aqui, mas deve ser mantido na íntegra no arquivo) ...
             const item = id ? app.db.getById(entity, id) : {};
             const modal = document.getElementById('generic-modal');
             const title = document.getElementById('modal-title');
@@ -1201,30 +1195,20 @@ window.app = {
             };
 
             let fieldsHtml = '';
-            // Switch case completo do original (farms, plots, financials, etc...)
-            // COPIAR TODO O CONTEÚDO ORIGINAL DO SWITCH CASE DE openForm AQUI
+
             switch(entity) {
                 case 'farms': fieldsHtml = `${this.inputHtml('text', 'name', 'Nome', item.name, true)}${this.inputHtml('text', 'owner', 'Proprietário', item.owner)}${this.inputHtml('number', 'area', 'Área (ha)', item.area)}${this.inputHtml('text', 'location', 'Local', item.location)}`; break;
-                // ... (Manter os demais cases) ...
-                // Para simplificar a visualização da resposta, assuma que todos os cases originais estão aqui.
-                // A estrutura não muda.
-                default:
-                     // Exemplo abreviado para manter a resposta válida, mas no arquivo final use o original:
-                     if(entity === 'stock_movement') {
-                         fieldsHtml = `<div class="form-group"><label>Insumo</label><select name="inputId" class="form-control" required onchange="app.ui.updateStockInfo(this)"><option value="">Selecione...</option>${getOptions('inputs', 'name', item.inputId)}</select></div><div class="form-group"><label>Estoque Atual</label><input type="text" id="current-stock-display" class="form-control" readonly></div><div class="form-group"><label>Tipo</label><select name="type" class="form-control"><option>Entrada</option><option>Saída</option></select></div><div class="grid-2-col"><div class="form-group"><label>Safra</label><select name="safraId" class="form-control"><option value="">Selecione...</option>${getOptions('crops', 'name', item.safraId)}</select></div></div>${this.inputHtml('text', 'motive', 'Motivo', '')}${this.inputHtml('number', 'quantity', 'Qtd', '', true)}`;
-                     } else {
-                         // Fallback logic for generic generation if needed, but original hardcoded HTML strings are preferred
-                         fieldsHtml = `<p>Formulário mantido do original.</p>`; 
-                         // Nota: Ao implementar, copie o bloco switch inteiro do arquivo original.
-                         // Vou reconstruir os mais críticos para garantir funcionalidade:
-                     }
+                case 'plots': fieldsHtml = `${this.inputHtml('text', 'name', 'Nome', item.name, true)}<div class="form-group"><label>Fazenda</label><select name="farmId" class="form-control" required><option value="">Selecione...</option>${getOptions('farms', 'name', item.farmId)}</select></div>${this.inputHtml('number', 'area', 'Área (ha)', item.area)}${this.inputHtml('text', 'soilType', 'Tipo de Solo', item.soilType)}${getSimpleSelect('status', 'Status', ['Disponível', 'Em uso', 'Em recuperação'], item.status)}`; break;
+                case 'crops': fieldsHtml = `${this.inputHtml('text', 'name', 'Nome da Safra', item.name, true)}<div class="form-group"><label>Talhão</label><select name="plotId" class="form-control" required><option value="">Selecione...</option>${getOptions('plots', 'name', item.plotId)}</select></div>${this.inputHtml('text', 'culture', 'Cultura', item.culture)}${getSimpleSelect('status', 'Status', ['Planejada', 'Plantada', 'Em crescimento', 'Colhida', 'Finalizada'], item.status)}${this.inputHtml('date', 'plantingDate', 'Data Plantio', item.plantingDate)}${this.inputHtml('date', 'expectedHarvestDate', 'Colheita Prevista', item.expectedHarvestDate)}${this.inputHtml('number', 'totalCost', 'Custo Estimado', item.totalCost)}`; break;
+                case 'inputs': fieldsHtml = `${this.inputHtml('text', 'name', 'Nome', item.name, true)}${getSimpleSelect('category', 'Categoria', ['Semente', 'Fertilizante', 'Defensivo', 'Combustível', 'Outro'], item.category)}${this.inputHtml('number', 'quantity', 'Qtd Atual', item.quantity)}${this.inputHtml('text', 'unit', 'Unidade (kg, lt, sc)', item.unit)}${this.inputHtml('text', 'supplier', 'Fornecedor', item.supplier)}`; break;
+                case 'stock_movement': fieldsHtml = `<div class="form-group"><label>Insumo</label><select name="inputId" class="form-control" required onchange="app.ui.updateStockInfo(this)"><option value="">Selecione...</option>${getOptions('inputs', 'name', item.inputId)}</select></div><div class="form-group"><label>Estoque Atual</label><input type="text" id="current-stock-display" class="form-control" readonly></div><div class="form-group"><label>Tipo</label><select name="type" class="form-control"><option>Entrada</option><option>Saída</option></select></div><div class="grid-2-col"><div class="form-group"><label>Safra</label><select name="safraId" class="form-control"><option value="">Selecione...</option>${getOptions('crops', 'name', item.safraId)}</select></div></div>${this.inputHtml('text', 'motive', 'Motivo', '')}${this.inputHtml('number', 'quantity', 'Qtd', '', true)}`; break;
+                case 'production': fieldsHtml = `${this.inputHtml('date', 'date', 'Data', item.date, true)}<div class="form-group"><label>Safra</label><select name="safraId" class="form-control" required><option value="">Selecione...</option>${getOptions('crops', 'name', item.safraId)}</select></div>${this.inputHtml('number', 'quantity', 'Quantidade', item.quantity, true)}${this.inputHtml('text', 'unit', 'Unidade (sc, ton)', item.unit)}`; break;
+                case 'maintenances': fieldsHtml = `<div class="form-group"><label>Equipamento</label><select name="machineId" class="form-control" required><option value="">Selecione...</option>${getOptions('machinery', 'name', item.machineId)}</select></div>${getSimpleSelect('type', 'Tipo', ['Preventiva', 'Corretiva', 'Preditiva'], item.type)}${this.inputHtml('date', 'date', 'Data', item.date, true)}${this.inputHtml('textarea', 'description', 'Descrição do Serviço', item.description)}${this.inputHtml('number', 'cost', 'Custo Total', item.cost)}${this.inputHtml('number', 'nextMaintenance', 'Próxima Manutenção (Horímetro)', item.nextMaintenance)}${getSimpleSelect('status', 'Status', ['Agendada', 'Executada', 'Cancelada'], item.status)}`; break;
+                case 'cycles': fieldsHtml = `${this.inputHtml('text', 'name', 'Nome/Tarefa', item.name, true)}${getSimpleSelect('type', 'Tipo', ['Preparação', 'Plantio', 'Manejo', 'Colheita'], item.type)}<div class="form-group"><label>Safra</label><select name="cropId" class="form-control"><option value="">Selecione...</option>${getOptions('crops', 'name', item.cropId)}</select></div><div class="grid-2-col">${this.inputHtml('date', 'startDate', 'Início', item.startDate)}${this.inputHtml('date', 'endDate', 'Fim', item.endDate)}</div>${getSimpleSelect('status', 'Status', ['Pendente', 'Em andamento', 'Concluído'], item.status)}<div class="form-section-title"><i class="fas fa-calculator"></i> Custos</div><div class="grid-2-col"><div class="form-group"><label>Máquina</label><select id="cycle-machine-select" name="machineId" class="form-control" onchange="app.ui.calcCycleCost()"><option value="">Selecione...</option>${getOptions('machinery', 'name', item.machineId)}</select></div>${this.inputHtml('number', 'machineHours', 'Horas', item.machineHours, false, 'id="cycle-hours-input" oninput="app.ui.calcCycleCost()"')}</div>${this.inputHtml('number', 'cost', 'Custo Estimado (R$)', item.cost, false, 'id="cycle-cost-input"')}`; break;
             }
-             
-            // Reaplique o switch completo do arquivo original aqui para garantir que nenhum campo se perca.
-            // (Devido ao limite de tamanho da resposta, instruo explicitamente a manter o bloco switch(entity) original).
-             
-             // --- REINTRODUZINDO ALGUNS CASES PARA EXEMPLO DE INTEGRIDADE ---
-             if (entity === 'financials') {
+
+            // Blocos que eram condicionais IF no original
+            if (entity === 'financials') {
                  fieldsHtml = `
                         ${this.inputHtml('date', 'date', 'Data', item.date, true)}
                         <div class="form-group"><label>Tipo</label><select name="type" class="form-control"><option value="expense" ${item.type!='income'?'selected':''}>Despesa</option><option value="income" ${item.type=='income'?'selected':''}>Receita</option></select></div>
@@ -1258,7 +1242,6 @@ window.app = {
                         ${this.inputHtml('textarea', 'notes', 'Observações', item.notes)}
                     `;
              }
-             // Assuma que plots, crops, inputs, cycles, production, maintenances estão presentes como no original.
 
             const entityTarget = entity === 'stock_movement' ? 'stock_movements' : entity;
             document.getElementById('modal-body').innerHTML = `<form onsubmit="app.ui.saveForm(event, '${entityTarget}', '${id || ''}')">${fieldsHtml}<div class="text-right" style="margin-top: 1rem;"><button type="button" class="btn btn-outline" onclick="app.ui.closeModal()">Cancelar</button><button type="submit" class="btn btn-primary">Salvar</button></div></form>`;
@@ -1284,7 +1267,7 @@ window.app = {
                     let currentQty = parseFloat(input.quantity) || 0; 
                     if(data.type === 'Entrada') currentQty += qty; else currentQty -= qty; 
                     input.quantity = currentQty; 
-                    app.db.save('inputs', input); // Salva input atualizado (aciona cloud sync)
+                    app.db.save('inputs', input); 
                 } 
             } 
             
@@ -1295,7 +1278,7 @@ window.app = {
                     });
             }
 
-            app.db.save(entity, data); // Salva entidade (aciona cloud sync)
+            app.db.save(entity, data); 
             app.ui.closeModal(); 
             
             if (entity === 'maintenances' || entity === 'machinery') app.system.checkAlerts();
