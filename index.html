@@ -1,0 +1,223 @@
+--- START OF FILE text/html ---
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgriManager | Gestão Agrícola</title>
+    
+    <!-- Bibliotecas Externas (CDNs) -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+
+    <!-- Arquivo CSS Separado -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- AUTHENTICATION SCREEN -->
+    <div id="auth-screen">
+        <div class="auth-container">
+            <div class="auth-header">
+                <i class="fas fa-tractor"></i>
+                <h2>AgriManager</h2>
+                <p>Gestão Agrícola Inteligente</p>
+            </div>
+            <div class="auth-body">
+                
+                <!-- LOGIN VIEW -->
+                <div id="view-login" class="auth-view active">
+                    <form onsubmit="app.auth.login(event)">
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input type="email" id="login-email" class="form-control" placeholder="admin@agri.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Senha</label>
+                            <input type="password" id="login-password" class="form-control" placeholder="admin123" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%">Entrar</button>
+                    </form>
+                    <div class="auth-links">
+                        <a onclick="app.auth.switchView('forgot')">Esqueci minha senha</a>
+                        <br><br>
+                        Não tem conta? <a onclick="app.auth.switchView('register')">Cadastre-se</a>
+                    </div>
+                    <div class="social-login">
+                        <button class="btn-google" onclick="app.auth.googleLogin()">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="G">
+                            Continuar com Google
+                        </button>
+                    </div>
+                </div>
+
+                <!-- REGISTER VIEW -->
+                <div id="view-register" class="auth-view">
+                    <h3 style="margin-bottom: 1rem; text-align:center;">Criar Conta</h3>
+                    <p style="text-align: center; font-size: 0.9rem; color: var(--success); margin-bottom: 1rem;">
+                        <i class="fas fa-gift"></i> Inclui 30 dias de avaliação grátis!
+                    </p>
+                    <form onsubmit="app.auth.register(event)">
+                        <div class="form-group">
+                            <label>Nome Completo</label>
+                            <input type="text" name="reg-name" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input type="email" name="reg-email" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Senha</label>
+                            <input type="password" name="reg-pass" class="form-control" minlength="6" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%">Cadastrar</button>
+                    </form>
+                    <div class="auth-links">
+                        Já possui conta? <a onclick="app.auth.switchView('login')">Fazer Login</a>
+                    </div>
+                </div>
+
+                <!-- FORGOT PASSWORD VIEW -->
+                <div id="view-forgot" class="auth-view">
+                    <h3 style="margin-bottom: 1rem; text-align:center;">Recuperar Senha</h3>
+                    <p style="font-size: 0.9rem; color: #666; margin-bottom: 1rem; text-align: center;">Digite seu e-mail para receber as instruções.</p>
+                    <form onsubmit="app.auth.forgotPassword(event)">
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input type="email" id="forgot-email" class="form-control" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%">Enviar Recuperação</button>
+                    </form>
+                    <div class="auth-links">
+                        <a onclick="app.auth.switchView('login')">Voltar ao Login</a>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- LOCK SCREEN (LICENSING) -->
+    <div id="lock-screen">
+        <div class="auth-container">
+            <div class="auth-header" style="background-color: var(--danger);">
+                <i class="fas fa-lock"></i>
+                <h2>Acesso Bloqueado</h2>
+                <p>Licença de Uso Expirada</p>
+            </div>
+            <div class="auth-body">
+                <p style="text-align: center; color: #555; margin-bottom: 1rem;">
+                    Seu período de avaliação ou licença terminou. Solicite um novo código para continuar utilizando o sistema.
+                </p>
+                <form onsubmit="app.license.unlock(event)">
+                    <div class="form-group" style="text-align: center;">
+                        <button type="button" class="btn btn-success" style="width: 100%; margin-bottom: 15px;" onclick="app.license.requestDaysLockScreen()">
+                            <i class="fab fa-whatsapp"></i> Solicitar Dias (Múltiplos de 30)
+                        </button>
+                        <small>Clique acima para enviar solicitação</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Contra-senha (Liberação)</label>
+                        <input type="number" id="unlock-pass" class="form-control" placeholder="Digite o código recebido" required>
+                    </div>
+                    <button type="submit" class="btn btn-danger" style="width: 100%">Liberar Acesso</button>
+                </form>
+                <div class="auth-links">
+                    <a onclick="app.auth.logout()">Voltar ao Login</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- APP LAYOUT -->
+    <div id="app-layout">
+        <!-- Sidebar -->
+        <aside id="sidebar">
+            <div class="brand">
+                <i class="fas fa-leaf"></i> AgriManager
+            </div>
+            <nav>
+                <!-- GRUPO: GESTÃO -->
+                <div class="nav-group-title">Gestão</div>
+                <a onclick="app.router.go('dashboard')" id="nav-dashboard" class="active"><i class="fas fa-home"></i> Dashboard</a>
+                <a onclick="app.router.go('financeiro')" id="nav-financeiro"><i class="fas fa-coins"></i> Financeiro</a>
+
+                <!-- GRUPO: ESTRUTURA & PRODUÇÃO -->
+                <div class="nav-group-title">Produção</div>
+                <a onclick="app.router.go('fazendas')" id="nav-fazendas"><i class="fas fa-warehouse"></i> Fazendas</a>
+                <a onclick="app.router.go('talhoes')" id="nav-talhoes"><i class="fas fa-vector-square"></i> Talhões</a>
+                <a onclick="app.router.go('safras')" id="nav-safras"><i class="fas fa-seedling"></i> Safras</a>
+                <a onclick="app.router.go('cycles')" id="nav-cycles"><i class="fas fa-tasks"></i> Ciclos e Tarefas</a>
+                <a onclick="app.router.go('producao')" id="nav-producao"><i class="fas fa-box-open"></i> Produção</a>
+
+                <!-- GRUPO: ESTOQUE -->
+                <div class="nav-group-title">Estoque & Insumos</div>
+                <a onclick="app.router.go('insumos')" id="nav-insumos"><i class="fas fa-flask"></i> Insumos</a>
+                <a onclick="app.router.go('stock')" id="nav-stock"><i class="fas fa-dolly"></i> Mov. Estoque</a>
+
+                <!-- GRUPO: RECURSOS -->
+                <div class="nav-group-title">Recursos</div>
+                <a onclick="app.router.go('machinery')" id="nav-machinery"><i class="fas fa-tractor"></i> Máquinas</a>
+                <a onclick="app.router.go('maintenances')" id="nav-maintenances"><i class="fas fa-tools"></i> Manutenções</a>
+                
+                <!-- GRUPO: ANÁLISES -->
+                <div class="nav-group-title">Análises</div>
+                <a onclick="app.router.go('relatorios')" id="nav-relatorios"><i class="fas fa-file-alt"></i> Relatórios</a>
+
+                <!-- GRUPO: SISTEMA -->
+                <div class="nav-group-title">Sistema</div>
+                <a onclick="app.router.go('settings')" id="nav-settings"><i class="fas fa-cog"></i> Configurações</a>
+                <a onclick="app.auth.logout()"><i class="fas fa-sign-out-alt"></i> Sair</a>
+            </nav>
+            <div class="license-info" id="license-status">
+                <i class="fas fa-calendar-check"></i> Licença: Verificando...
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main>
+            <header>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <i class="fas fa-bars mobile-toggle" onclick="app.ui.toggleSidebar()"></i>
+                    <h2 id="page-title">Dashboard</h2>
+                </div>
+                <div>
+                    <span id="user-display" style="font-weight: 500; margin-right: 10px;">Usuário</span>
+                    <i class="fas fa-user-circle fa-lg" style="color: var(--primary-color)"></i>
+                </div>
+            </header>
+
+            <div id="content-area">
+                <!-- Conteúdo injetado via JS -->
+            </div>
+        </main>
+    </div>
+
+    <!-- GENERIC MODAL -->
+    <div class="modal-overlay" id="generic-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Título</h3>
+                <span class="close-modal" onclick="app.ui.closeModal()">&times;</span>
+            </div>
+            <div id="modal-body">
+                <!-- Formulário injetado via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ALERT CONTAINER -->
+    <div id="alert-container"></div>
+
+    <!-- Input Oculto para Restore -->
+    <input type="file" id="restore-input" accept=".json" style="display: none;" onchange="app.ui.restoreData(this)">
+
+    <!-- Arquivo JS Separado -->
+    <script src="app.js"></script>
+</body>
+</html>
