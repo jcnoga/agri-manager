@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Verifica se o usuário está logado
+    function estaLogado() {
+      return request.auth != null;
+    }
+
+    // --- REGRA DE OURO ---
+    // O {userId} no caminho do banco deve ser IGUAL ao ID do usuário autenticado
+    match /agri_manager_apps/{userId}/{document=**} {
+      allow read, write: if estaLogado() && request.auth.uid == userId;
+    }
+    
+    // Regra específica para a fila de emails (para permitir que o sistema funcione)
+    // O usuário pode escrever na sua própria fila
+    match /agri_manager_apps/{userId}/mail_queue/{mailId} {
+      allow read, write: if estaLogado() && request.auth.uid == userId;
+    }
+  }
+}

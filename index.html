@@ -1,10 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<!-- Firebase SDK (Versão Compatibilidade) -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgriManager | Gestão Agrícola</title>
@@ -16,12 +12,17 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
 
+    <!-- Firebase SDK (Versão Compatibilidade) - Essencial para funcionamento Online -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
     <!-- Arquivo CSS Separado -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <!-- AUTHENTICATION SCREEN -->
+    <!-- TELA DE AUTENTICAÇÃO -->
     <div id="auth-screen">
         <div class="auth-container">
             <div class="auth-header">
@@ -30,7 +31,6 @@
                 <p>Gestão Agrícola Inteligente</p>
             </div>
             <div class="auth-body">
-                
                 <!-- LOGIN VIEW -->
                 <div id="view-login" class="auth-view active">
                     <form onsubmit="app.auth.login(event)">
@@ -45,8 +45,7 @@
                         <button type="submit" class="btn btn-primary" style="width: 100%">Entrar</button>
                     </form>
                     <div class="auth-links">
-                        <a onclick="app.auth.switchView('forgot')">Esqueci minha senha</a>
-                        <br><br>
+                        <a onclick="app.auth.switchView('forgot')">Esqueci minha senha</a><br><br>
                         Não tem conta? <a onclick="app.auth.switchView('register')">Cadastre-se</a>
                     </div>
                     <div class="social-login">
@@ -86,7 +85,6 @@
                 <!-- FORGOT PASSWORD VIEW -->
                 <div id="view-forgot" class="auth-view">
                     <h3 style="margin-bottom: 1rem; text-align:center;">Recuperar Senha</h3>
-                    <p style="font-size: 0.9rem; color: #666; margin-bottom: 1rem; text-align: center;">Digite seu e-mail para receber as instruções.</p>
                     <form onsubmit="app.auth.forgotPassword(event)">
                         <div class="form-group">
                             <label>E-mail</label>
@@ -98,12 +96,11 @@
                         <a onclick="app.auth.switchView('login')">Voltar ao Login</a>
                     </div>
                 </div>
-
             </div>
         </div>
     </div>
 
-    <!-- LOCK SCREEN (LICENSING) -->
+    <!-- TELA DE BLOQUEIO (LICENÇA) -->
     <div id="lock-screen">
         <div class="auth-container">
             <div class="auth-header" style="background-color: var(--danger);">
@@ -112,44 +109,35 @@
                 <p>Licença de Uso Expirada</p>
             </div>
             <div class="auth-body">
-                <p style="text-align: center; color: #555; margin-bottom: 1rem;">
-                    Seu período de avaliação ou licença terminou. Solicite um novo código para continuar utilizando o sistema.
-                </p>
+                <p style="text-align: center; color: #555; margin-bottom: 1rem;">Seu período de avaliação ou licença terminou.</p>
                 <form onsubmit="app.license.unlock(event)">
                     <div class="form-group" style="text-align: center;">
                         <button type="button" class="btn btn-success" style="width: 100%; margin-bottom: 15px;" onclick="app.license.requestDaysLockScreen()">
-                            <i class="fab fa-whatsapp"></i> Solicitar Dias (Múltiplos de 30)
+                            <i class="fab fa-whatsapp"></i> Solicitar Dias
                         </button>
-                        <small>Clique acima para enviar solicitação</small>
                     </div>
-                    
                     <div class="form-group">
-                        <label>Contra-senha (Liberação)</label>
-                        <input type="number" id="unlock-pass" class="form-control" placeholder="Digite o código recebido" required>
+                        <label>Contra-senha</label>
+                        <input type="number" id="unlock-pass" class="form-control" required>
                     </div>
                     <button type="submit" class="btn btn-danger" style="width: 100%">Liberar Acesso</button>
                 </form>
-                <div class="auth-links">
-                    <a onclick="app.auth.logout()">Voltar ao Login</a>
-                </div>
+                <div class="auth-links"><a onclick="app.auth.logout()">Voltar ao Login</a></div>
             </div>
         </div>
     </div>
 
     <!-- APP LAYOUT -->
     <div id="app-layout">
-        <!-- Sidebar -->
         <aside id="sidebar">
-            <div class="brand">
-                <i class="fas fa-leaf"></i> AgriManager
-            </div>
+            <div class="brand"><i class="fas fa-leaf"></i> AgriManager</div>
             <nav>
-                <!-- GRUPO: GESTÃO -->
                 <div class="nav-group-title">Gestão</div>
                 <a onclick="app.router.go('dashboard')" id="nav-dashboard" class="active"><i class="fas fa-home"></i> Dashboard</a>
                 <a onclick="app.router.go('financeiro')" id="nav-financeiro"><i class="fas fa-coins"></i> Financeiro</a>
+                <!-- NOVO ITEM DE MENU -->
+                <a onclick="app.router.go('lembretes')" id="nav-lembretes"><i class="fas fa-bell"></i> Lembretes</a>
 
-                <!-- GRUPO: ESTRUTURA & PRODUÇÃO -->
                 <div class="nav-group-title">Produção</div>
                 <a onclick="app.router.go('fazendas')" id="nav-fazendas"><i class="fas fa-warehouse"></i> Fazendas</a>
                 <a onclick="app.router.go('talhoes')" id="nav-talhoes"><i class="fas fa-vector-square"></i> Talhões</a>
@@ -157,31 +145,24 @@
                 <a onclick="app.router.go('cycles')" id="nav-cycles"><i class="fas fa-tasks"></i> Ciclos e Tarefas</a>
                 <a onclick="app.router.go('producao')" id="nav-producao"><i class="fas fa-box-open"></i> Produção</a>
 
-                <!-- GRUPO: ESTOQUE -->
                 <div class="nav-group-title">Estoque & Insumos</div>
                 <a onclick="app.router.go('insumos')" id="nav-insumos"><i class="fas fa-flask"></i> Insumos</a>
                 <a onclick="app.router.go('stock')" id="nav-stock"><i class="fas fa-dolly"></i> Mov. Estoque</a>
 
-                <!-- GRUPO: RECURSOS -->
                 <div class="nav-group-title">Recursos</div>
                 <a onclick="app.router.go('machinery')" id="nav-machinery"><i class="fas fa-tractor"></i> Máquinas</a>
                 <a onclick="app.router.go('maintenances')" id="nav-maintenances"><i class="fas fa-tools"></i> Manutenções</a>
                 
-                <!-- GRUPO: ANÁLISES -->
                 <div class="nav-group-title">Análises</div>
                 <a onclick="app.router.go('relatorios')" id="nav-relatorios"><i class="fas fa-file-alt"></i> Relatórios</a>
 
-                <!-- GRUPO: SISTEMA -->
                 <div class="nav-group-title">Sistema</div>
                 <a onclick="app.router.go('settings')" id="nav-settings"><i class="fas fa-cog"></i> Configurações</a>
                 <a onclick="app.auth.logout()"><i class="fas fa-sign-out-alt"></i> Sair</a>
             </nav>
-            <div class="license-info" id="license-status">
-                <i class="fas fa-calendar-check"></i> Licença: Verificando...
-            </div>
+            <div class="license-info" id="license-status"><i class="fas fa-calendar-check"></i> Licença: Verificando...</div>
         </aside>
 
-        <!-- Main Content -->
         <main>
             <header>
                 <div style="display: flex; align-items: center; gap: 1rem;">
@@ -193,10 +174,7 @@
                     <i class="fas fa-user-circle fa-lg" style="color: var(--primary-color)"></i>
                 </div>
             </header>
-
-            <div id="content-area">
-                <!-- Conteúdo injetado via JS -->
-            </div>
+            <div id="content-area"></div>
         </main>
     </div>
 
@@ -207,19 +185,14 @@
                 <h3 id="modal-title">Título</h3>
                 <span class="close-modal" onclick="app.ui.closeModal()">&times;</span>
             </div>
-            <div id="modal-body">
-                <!-- Formulário injetado via JS -->
-            </div>
+            <div id="modal-body"></div>
         </div>
     </div>
 
     <!-- ALERT CONTAINER -->
     <div id="alert-container"></div>
 
-    <!-- Input Oculto para Restore -->
     <input type="file" id="restore-input" accept=".json" style="display: none;" onchange="app.ui.restoreData(this)">
-
-    <!-- Arquivo JS Separado -->
     <script src="app.js"></script>
 </body>
 </html>
