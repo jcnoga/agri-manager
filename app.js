@@ -1,7 +1,7 @@
 /**
  * SISTEMA AGRIMANAGER - ARQUIVO PRINCIPAL JAVASCRIPT
- * Versão: Híbrida (LocalStorage + Firebase Sync)
- * Atualizações: Correção de Persistência de Dados Demo e Isolamento de Usuário
+ * Versão: Híbrida (LocalStorage + Firebase Sync + Realtime License Display)
+ * Atualizações: Exibição explícita e reativa de daysRemaining via Firebase
  */
 
 window.app = {
@@ -34,6 +34,8 @@ window.app = {
     cloud: {
         db: null,
         auth: null,
+        licenseListener: null, // Listener para monitoramento em tempo real
+
         init() {
             try {
                 if (typeof firebase === 'undefined') {
@@ -48,17 +50,23 @@ window.app = {
                 
                 this.auth.onAuthStateChanged(user => {
                     if (user) {
-                        // --- CORREÇÃO DE SEGURANÇA: ISOLAMENTO DE DADOS ---
-                        // Define o ID do App como o UID do usuário. 
-                        // Assim, ele só lê/escreve na própria pasta 'users/{UID}'.
+                        // --- SEGURANÇA: ISOLAMENTO DE DADOS ---
                         app.config.appId = user.uid;
                         
                         console.log(`✅ Firebase: Conectado como ${user.email}`);
                         console.log(`🔒 Pasta do Usuário Segura: users/${app.config.appId}`);
                         
-                        this.syncDown();
+                        this.syncDown().then(() => {
+                            // Inicia monitoramento em tempo real da licença após sync
+                            this.monitorLicense();
+                        });
                     } else {
                         console.log("Firebase: Desconectado");
+                        // Remove o listener ao sair para evitar vazamento de memória
+                        if (this.licenseListener) {
+                            this.licenseListener();
+                            this.licenseListener = null;
+                        }
                     }
                 });
             } catch (e) {
@@ -66,7 +74,90 @@ window.app = {
             }
         },
 
-        // Salva Pedido de E-mail na Nuvem (Para processamento Backend)
+        // --- CORREÇÃO: Exibição Explícita e Reativa da Licença ---
+        monitorLicense() {
+            if (!this.db || !app.config.appId) return;
+
+            const licenseRef = this.db.collection('users')
+                                      .doc(app.config.appId)
+                                      .collection('system')
+                                      .doc('license');
+
+            // Cria o ouvinte persistente
+            this.licenseListener = licenseRef.onSnapshot((doc) => {
+                if (doc.exists) {
+                    const remoteData = doc.data();
+                    console.log("🔄 Firebase Update - Licença:", remoteData);
+                    
+                    // 1. Tratamento seguro do valor (Fonte da Verdade)
+                    // Garante que seja um número inteiro. Se não vier do Firebase, mantém o local.
+                    let localData = JSON.parse(localStorage.getItem('agri_data')) || {};
+                    if(!localData.license) localData.license = {};
+                    
+                    let newDays = localData.license.daysRemaining;
+                    if (remoteData.daysRemaining !== undefined && remoteData.daysRemaining !== null) {
+                        newDays = parseInt(remoteData.daysRemaining);
+                    }
+
+                    // 2. Atualiza LocalStorage (Persistência)
+                    // Atualiza também a data de checagem para hoje para evitar decremento duplo no mesmo dia
+                    localData.license = { 
+                        ...localData.license, 
+                        ...remoteData,
+                        daysRemaining: newDays,
+                        lastCheckDate: new Date().toISOString().split('T')[0] 
+                    };
+                    localStorage.setItem('agri_data', JSON.stringify(localData));
+
+                    // 3. ATUALIZAÇÃO VISUAL EXPLÍCITA E IMEDIATA (Sidebar)
+                    // Injeta o valor diretamente no DOM para garantir visibilidade instantânea
+                    const sidebarStatusEl = document.getElementById('license-status');
+                    if (sidebarStatusEl) {
+                        if (newDays > 0) {
+                            sidebarStatusEl.innerHTML = `<i class="fas fa-calendar-check"></i> Licença: ${newDays} dias`;
+                            sidebarStatusEl.style.color = '#fff';
+                        } else {
+                            sidebarStatusEl.innerHTML = `<i class="fas fa-lock"></i> Licença EXPIRADA`;
+                            sidebarStatusEl.style.color = '#ff8a80';
+                        }
+                    }
+
+                    // 4. Gerenciamento de Bloqueio/Desbloqueio (Fluxo de Tela)
+                    const lockScreen = document.getElementById('lock-screen');
+                    const appLayout = document.getElementById('app-layout');
+                    const authScreen = document.getElementById('auth-screen');
+                    const isActive = newDays > 0;
+
+                    if (isActive) {
+                        // Desbloqueia
+                        if(lockScreen.style.display !== 'none') lockScreen.style.display = 'none';
+                        // Se estiver logado, garante que o app está visível
+                        if(authScreen.style.display === 'none') appLayout.style.display = 'flex';
+                    } else {
+                        // Bloqueia
+                        appLayout.style.display = 'none';
+                        authScreen.style.display = 'none';
+                        lockScreen.style.display = 'flex';
+                    }
+
+                    // 5. Atualização Reativa da View Atual (Dashboard/Configurações)
+                    // Força a re-renderização apenas se o usuário não estiver na tela de login/bloqueio
+                    if (app.state.currentView && authScreen.style.display === 'none' && isActive) {
+                        // Se estiver no Dashboard ou Configurações, recarrega a view para atualizar os cards
+                        if (app.state.currentView === 'dashboard' || app.state.currentView === 'settings') {
+                            app.router.go(app.state.currentView);
+                        }
+                    }
+                    
+                    // Feedback visual discreto
+                    app.system.triggerAlert('Sincronização', `Crédito atualizado: ${newDays} dias.`, false);
+                }
+            }, (error) => {
+                console.error("Erro no monitoramento de licença:", error);
+            });
+        },
+
+        // Salva Pedido de E-mail na Nuvem
         async queueEmail(emailData) {
             const mailItem = {
                 id: app.utils.uuid(),
@@ -83,7 +174,6 @@ window.app = {
 
             if (this.db && app.config.appId) {
                 try {
-                    // ALTERADO PARA CAMINHO SEGURO DO USUÁRIO
                     await this.db.collection('users')
                         .doc(app.config.appId)
                         .collection('mail_queue')
@@ -100,12 +190,9 @@ window.app = {
 
         async save(table, item) {
             if (!this.db || !app.state.currentUser || !app.config.appId) return;
-            // Não sincroniza se for conta local pura sem conexão
             if (app.state.currentUser.provider === 'local' && !this.auth.currentUser) return;
 
             try {
-                // ALTERADO PARA CAMINHO SEGURO DO USUÁRIO
-                // Retorna a promise para que quem chamar possa aguardar (usado no seedDemoData)
                 return await this.db.collection('users')
                     .doc(app.config.appId)
                     .collection(table)
@@ -117,7 +204,6 @@ window.app = {
         async delete(table, id) {
             if (!this.db || !app.state.currentUser || !app.config.appId) return;
             try {
-                // ALTERADO PARA CAMINHO SEGURO DO USUÁRIO
                 await this.db.collection('users')
                     .doc(app.config.appId)
                     .collection(table)
@@ -130,13 +216,10 @@ window.app = {
             if (!this.db || !app.config.appId) return;
             const tables = Object.keys(app.db.schema).filter(k => Array.isArray(app.db.schema[k]));
             
-            // Limpa dados locais antes de baixar (para evitar mistura entre usuários se estiver no mesmo PC)
-            // Agora garantimos que usamos a estrutura local correta
             let localData = JSON.parse(localStorage.getItem('agri_data')) || JSON.parse(JSON.stringify(app.db.schema));
             
             for (const table of tables) {
                 try {
-                    // ALTERADO PARA CAMINHO SEGURO DO USUÁRIO
                     const snapshot = await this.db.collection('users')
                         .doc(app.config.appId)
                         .collection(table)
@@ -145,14 +228,11 @@ window.app = {
                     if (!snapshot.empty) {
                         const remoteData = [];
                         snapshot.forEach(doc => remoteData.push(doc.data()));
-                        
-                        // Atualiza local com o que veio da nuvem
                         localData[table] = remoteData;
                     }
                 } catch (e) { console.error(`Erro syncDown tabela ${table}:`, e); }
             }
 
-            // Sincronizar também configurações e licença que ficam em subcoleção system
             try {
                 const sysRef = this.db.collection('users').doc(app.config.appId).collection('system');
                 
@@ -166,7 +246,6 @@ window.app = {
 
             localStorage.setItem('agri_data', JSON.stringify(localData));
             
-            // Atualiza a tela atual
             if(app.state.currentView) app.router.go(app.state.currentView);
             console.log("Sincronização Cloud (Segura) -> Local concluída.");
         }
@@ -181,7 +260,7 @@ window.app = {
                 soundEnabled: true,
                 visualEnabled: true,
                 supportPhone: '5511999999999',
-                // CONFIGURAÇÕES PADRÃO (LEMBRETES)
+                // CONFIGURAÇÕES PADRÃO
                 defAlarmLead: 14,      
                 defAlarmRepeat: 5,     
                 defAlarmOverdue: 10,   
@@ -214,7 +293,6 @@ window.app = {
 
             if (!localStorage.getItem('agri_data')) {
                 const initialData = JSON.parse(JSON.stringify(this.schema));
-                // Usuário local padrão apenas para fallback
                 initialData.users.push({
                     id: 'admin01', name: 'Administrador', email: 'admin@agri.com', pass: 'admin123', provider: 'local'
                 });
@@ -222,16 +300,14 @@ window.app = {
                 localStorage.setItem('agri_data', JSON.stringify(initialData));
             } else {
                 let data = JSON.parse(localStorage.getItem('agri_data'));
-                // Migrations: Garante que arrays novos existam
+                // Migrations
                 if(!data.stock_movements) data.stock_movements = [];
                 if(!data.cycles) data.cycles = [];
                 if(!data.machinery) data.machinery = [];
                 if(!data.maintenances) data.maintenances = [];
                 if(!data.reminders) data.reminders = []; 
-                
                 if(!data.settings) data.settings = this.schema.settings;
                 
-                // Merge configurações
                 const s = this.schema.settings;
                 const d = data.settings;
                 if(d.defAlarmLead === undefined) d.defAlarmLead = s.defAlarmLead;
@@ -265,7 +341,6 @@ window.app = {
             const data = JSON.parse(localStorage.getItem('agri_data'));
             data.license = licData;
             localStorage.setItem('agri_data', JSON.stringify(data));
-            // Sincroniza em local seguro
             if(app.cloud.db && app.config.appId) {
                 app.cloud.db.collection('users').doc(app.config.appId)
                     .collection('system').doc('license').set(licData).catch(()=>{});
@@ -277,7 +352,6 @@ window.app = {
             data.settings = { ...data.settings, ...newSettings };
             localStorage.setItem('agri_data', JSON.stringify(data));
             app.system.restartAlertLoop();
-            // Sincroniza em local seguro
             if(app.cloud.db && app.config.appId) {
                 app.cloud.db.collection('users').doc(app.config.appId)
                     .collection('system').doc('settings').set(data.settings).catch(()=>{});
@@ -317,14 +391,10 @@ window.app = {
             return true;
         },
 
-        // --- FUNÇÃO DADOS DEMO ROBUSTA COM PERSISTÊNCIA CORRIGIDA ---
+        // --- FUNÇÃO DADOS DEMO ---
         async seedDemoData() {
             if(!confirm("Isso irá adicionar diversos registros de demonstração (Fazendas, Safras, Financeiro, etc) ao seu banco de dados atual.\n\nDeseja continuar?")) return;
-
-            // Array para coletar as promises de salvamento na nuvem e garantir persistência antes do reload
             const savePromises = [];
-
-            // Utilitários
             const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
             const randItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
             const dId = () => 'demo_' + Date.now() + '_' + rand(1, 9999);
@@ -334,7 +404,6 @@ window.app = {
                 return d.toISOString().split('T')[0];
             };
 
-            // 1. FAZENDAS
             const farmNames = ['Fazenda Santa Fé', 'Sítio Alvorada', 'Agropecuária Boa Vista', 'Fazenda Vale do Sol'];
             const createdFarms = [];
             for (let i = 0; i < 4; i++) {
@@ -346,12 +415,10 @@ window.app = {
                     location: randItem(['Mato Grosso', 'Goiás', 'Paraná', 'Bahia'])
                 };
                 app.db.save('farms', farm);
-                // Força o salvamento explícito na nuvem e guarda a promise
                 savePromises.push(app.cloud.save('farms', farm));
                 createdFarms.push(farm);
             }
 
-            // 2. TALHÕES
             const createdPlots = [];
             if (createdFarms.length > 0) {
                 for (let i = 0; i < 5; i++) {
@@ -370,7 +437,6 @@ window.app = {
                 }
             }
 
-            // 3. MÁQUINAS
             const createdMachines = [];
             const machineTypes = [
                 {n: 'Trator JD 7200', t: 'Máquina', cost: 250}, 
@@ -392,7 +458,6 @@ window.app = {
                 createdMachines.push(machine);
             });
 
-            // 4. INSUMOS
             const inputTypes = [
                 {n: 'Semente de Soja', c: 'Semente', u: 'sc'},
                 {n: 'NPK 04-14-08', c: 'Fertilizante', u: 'ton'},
@@ -411,7 +476,6 @@ window.app = {
                 savePromises.push(app.cloud.save('inputs', item));
             });
 
-            // 5. SAFRAS & PRODUÇÃO & FINANCEIRO
             if (createdPlots.length > 0) {
                 const cultures = ['Soja', 'Milho'];
                 for (let i = 0; i < 3; i++) {
@@ -429,7 +493,6 @@ window.app = {
                     app.db.save('crops', crop);
                     savePromises.push(app.cloud.save('crops', crop));
 
-                    // Produção
                     const prod = {
                         id: dId(),
                         safraId: crop.id,
@@ -440,7 +503,6 @@ window.app = {
                     app.db.save('production', prod);
                     savePromises.push(app.cloud.save('production', prod));
                     
-                    // Receita
                     const fin = {
                         id: dId(),
                         date: today,
@@ -455,7 +517,6 @@ window.app = {
                 }
             }
 
-            // 6. LEMBRETES
             const settings = app.db.getSettings();
             const reminder = {
                 id: dId(),
@@ -477,20 +538,15 @@ window.app = {
             app.db.save('reminders', reminder);
             savePromises.push(app.cloud.save('reminders', reminder));
 
-            // Feedback visual e espera pela persistência
             if(savePromises.length > 0) {
                 const btn = document.querySelector('button[onclick="app.db.seedDemoData()"]');
                 if(btn) {
                     btn.disabled = true;
                     btn.innerText = "Salvando na Nuvem...";
                 }
-                
                 try {
-                    // Aguarda todas as operações de escrita no Firebase terminarem
                     await Promise.all(savePromises);
-                } catch(e) {
-                    console.error("Erro ao salvar dados demo na nuvem:", e);
-                }
+                } catch(e) { console.error("Erro ao salvar dados demo na nuvem:", e); }
             }
 
             alert('Dados demo gerados e salvos com sucesso!');
@@ -575,7 +631,7 @@ window.app = {
             const settings = app.db.getSettings();
             const intervalMs = (settings.alertInterval || 60) * 60 * 1000;
             this.checkAlerts(); 
-            this.checkReminders(); // Verifica imediatamente
+            this.checkReminders(); 
             
             app.state.alertIntervalId = setInterval(() => { 
                 this.checkAlerts(); 
@@ -618,7 +674,6 @@ window.app = {
             if (hasAlert && settings.soundEnabled) this.playSound();
         },
 
-        // FUNÇÃO DE EXECUÇÃO DE LEMBRETES (E-MAILS E ALERTAS)
         checkReminders() {
             const reminders = app.db.get('reminders');
             const settings = app.db.getSettings();
@@ -626,7 +681,6 @@ window.app = {
             const todayStr = now.toISOString().split('T')[0];
             let updated = false;
 
-            // 1. Limpeza Automática
             const cleanupDate = new Date();
             cleanupDate.setDate(cleanupDate.getDate() - (parseInt(settings.cleanupDays) || 30));
             
@@ -643,7 +697,6 @@ window.app = {
                 updated = true;
             }
 
-            // 2. Verificação de Alertas e E-mails
             activeReminders.forEach(r => {
                 if (r.status === 'Concluído') return;
 
@@ -655,7 +708,6 @@ window.app = {
                 const dateOnlyNow = new Date(todayStr + 'T00:00:00');
                 const diffDays = Math.ceil((dateOnlyTarget - dateOnlyNow) / (1000 * 60 * 60 * 24));
 
-                // --- A. Lógica de Alarme (App Aberto) ---
                 if (r.alarmConfig) {
                     const lead = parseInt(r.alarmConfig.lead) || 15;
                     const repeat = parseInt(r.alarmConfig.repeat) || 5;
@@ -681,7 +733,6 @@ window.app = {
                     }
                 }
 
-                // --- B. Lógica de E-mail (Enfileiramento) ---
                 if (r.emailEnabled) {
                     const cfg = {
                         lead: settings.defEmailLead || 1,
@@ -698,17 +749,14 @@ window.app = {
                     let shouldQueueEmail = false;
                     let emailType = '';
 
-                    // Regra 1: Envio Antecipado
                     if (diffDays === cfg.lead && r.stats.lastEmailDate !== todayStr) {
                         shouldQueueEmail = true;
                         emailType = 'Antecipado';
                     }
-                    // Regra 2: No Dia do Vencimento (Prioritário)
                     else if (diffDays === 0 && r.stats.lastEmailDate !== todayStr) {
                         shouldQueueEmail = true;
                         emailType = 'Vencimento';
                     }
-                    // Regra 3: Atrasado
                     else if (diffDays < 0) {
                         const daysPast = Math.abs(diffDays);
                         if ((daysPast % cfg.overdue === 0) && 
@@ -720,7 +768,6 @@ window.app = {
                     }
 
                     if (shouldQueueEmail && cfg.target) {
-                        // Enfileira o e-mail na nuvem
                         app.cloud.queueEmail({
                             to: cfg.target,
                             subject: `[AgriManager] Lembrete ${emailType}: ${r.name}`,
@@ -740,7 +787,6 @@ window.app = {
                 const allData = JSON.parse(localStorage.getItem('agri_data'));
                 allData.reminders = activeReminders;
                 localStorage.setItem('agri_data', JSON.stringify(allData));
-                // Salva na nuvem para atualizar os status e evitar reenvio
                 if(app.cloud.db) activeReminders.forEach(r => app.cloud.save('reminders', r));
             }
         },
@@ -782,7 +828,6 @@ window.app = {
             if (session) {
                 app.state.currentUser = JSON.parse(session);
                 
-                // Fallback para appId caso a conexão caia, usando o ID do usuário da sessão
                 if(!app.config.appId) app.config.appId = app.state.currentUser.id;
 
                 if (!app.license.checkStatus()) return;
@@ -815,15 +860,13 @@ window.app = {
 
             btn.innerText = 'Verificando...';
 
-            // 1. Tenta Firebase Auth (Prioritário)
             if (app.cloud.auth) {
                 try {
                     const userCredential = await app.cloud.auth.signInWithEmailAndPassword(email, pass);
                     const fbUser = userCredential.user;
                     
-                    // SEGURANÇA: Limpa dados locais antigos antes de iniciar nova sessão
                     localStorage.removeItem('agri_data');
-                    app.db.init(); // Reinicia DB limpo
+                    app.db.init(); 
 
                     const sessionUser = {
                         id: fbUser.uid,
@@ -838,7 +881,6 @@ window.app = {
                 }
             }
 
-            // 2. Fallback para usuário local (Modo Offline)
             const localUser = app.db.findUser(email);
             if (localUser && localUser.provider === 'local' && localUser.pass === pass) {
                  this.createSession(localUser);
@@ -858,7 +900,6 @@ window.app = {
                     const provider = new firebase.auth.GoogleAuthProvider();
                     const result = await app.cloud.auth.signInWithPopup(provider);
                     
-                    // SEGURANÇA: Limpa dados locais antigos
                     localStorage.removeItem('agri_data');
                     app.db.init();
 
@@ -902,7 +943,6 @@ window.app = {
                 }
             }
 
-            // Fallback Local
             if(app.db.createUser(name, email, pass, 'local')) {
                 alert('Conta local criada com sucesso!');
                 this.switchView('login');
@@ -927,7 +967,6 @@ window.app = {
         logout() { 
             if(confirm('Sair?')) { 
                 if(app.cloud.auth) app.cloud.auth.signOut();
-                // LIMPEZA DE SEGURANÇA: Remove sessão e dados locais
                 localStorage.removeItem('agri_session'); 
                 localStorage.removeItem('agri_data'); 
                 window.location.reload(); 
@@ -1501,14 +1540,11 @@ window.app = {
                 const currentData = JSON.parse(localStorage.getItem('agri_data'));
 
                 tablesToClear.forEach(table => {
-                    // Limpa na Nuvem (se conectado) e se tiver AppID definido
                     if (app.cloud.db && currentData[table] && Array.isArray(currentData[table])) {
                         currentData[table].forEach(item => {
-                            // Alterado para deletar no caminho seguro users/{uid}
                             app.cloud.delete(table, item.id);
                         });
                     }
-                    // Limpa Localmente
                     currentData[table] = [];
                 });
 
