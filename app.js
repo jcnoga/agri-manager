@@ -1,7 +1,7 @@
 /**
  * SISTEMA AGRIMANAGER - ARQUIVO PRINCIPAL JAVASCRIPT
- * Versão: Híbrida (LocalStorage + Firebase Sync + Realtime License Display)
- * Atualizações: Exibição explícita e reativa de daysRemaining via Firebase
+ * Versão: Híbrida (LocalStorage + Firebase Sync + Realtime License + Email Fix)
+ * Atualizações: Correção de timezone no disparo de e-mails e validação de envio.
  */
 
 window.app = {
@@ -74,7 +74,7 @@ window.app = {
             }
         },
 
-        // --- CORREÇÃO: Exibição Explícita e Reativa da Licença ---
+        // --- Monitoramento de Licença (Funcionalidade Anterior Preservada) ---
         monitorLicense() {
             if (!this.db || !app.config.appId) return;
 
@@ -83,14 +83,11 @@ window.app = {
                                       .collection('system')
                                       .doc('license');
 
-            // Cria o ouvinte persistente
             this.licenseListener = licenseRef.onSnapshot((doc) => {
                 if (doc.exists) {
                     const remoteData = doc.data();
                     console.log("🔄 Firebase Update - Licença:", remoteData);
                     
-                    // 1. Tratamento seguro do valor (Fonte da Verdade)
-                    // Garante que seja um número inteiro. Se não vier do Firebase, mantém o local.
                     let localData = JSON.parse(localStorage.getItem('agri_data')) || {};
                     if(!localData.license) localData.license = {};
                     
@@ -99,8 +96,6 @@ window.app = {
                         newDays = parseInt(remoteData.daysRemaining);
                     }
 
-                    // 2. Atualiza LocalStorage (Persistência)
-                    // Atualiza também a data de checagem para hoje para evitar decremento duplo no mesmo dia
                     localData.license = { 
                         ...localData.license, 
                         ...remoteData,
@@ -109,8 +104,6 @@ window.app = {
                     };
                     localStorage.setItem('agri_data', JSON.stringify(localData));
 
-                    // 3. ATUALIZAÇÃO VISUAL EXPLÍCITA E IMEDIATA (Sidebar)
-                    // Injeta o valor diretamente no DOM para garantir visibilidade instantânea
                     const sidebarStatusEl = document.getElementById('license-status');
                     if (sidebarStatusEl) {
                         if (newDays > 0) {
@@ -122,34 +115,26 @@ window.app = {
                         }
                     }
 
-                    // 4. Gerenciamento de Bloqueio/Desbloqueio (Fluxo de Tela)
                     const lockScreen = document.getElementById('lock-screen');
                     const appLayout = document.getElementById('app-layout');
                     const authScreen = document.getElementById('auth-screen');
                     const isActive = newDays > 0;
 
                     if (isActive) {
-                        // Desbloqueia
                         if(lockScreen.style.display !== 'none') lockScreen.style.display = 'none';
-                        // Se estiver logado, garante que o app está visível
                         if(authScreen.style.display === 'none') appLayout.style.display = 'flex';
                     } else {
-                        // Bloqueia
                         appLayout.style.display = 'none';
                         authScreen.style.display = 'none';
                         lockScreen.style.display = 'flex';
                     }
 
-                    // 5. Atualização Reativa da View Atual (Dashboard/Configurações)
-                    // Força a re-renderização apenas se o usuário não estiver na tela de login/bloqueio
                     if (app.state.currentView && authScreen.style.display === 'none' && isActive) {
-                        // Se estiver no Dashboard ou Configurações, recarrega a view para atualizar os cards
                         if (app.state.currentView === 'dashboard' || app.state.currentView === 'settings') {
                             app.router.go(app.state.currentView);
                         }
                     }
                     
-                    // Feedback visual discreto
                     app.system.triggerAlert('Sincronização', `Crédito atualizado: ${newDays} dias.`, false);
                 }
             }, (error) => {
@@ -157,8 +142,17 @@ window.app = {
             });
         },
 
-        // Salva Pedido de E-mail na Nuvem
+        // --- CORREÇÃO: Envio de E-mail Robusto ---
         async queueEmail(emailData) {
+            // Validação de segurança: Destinatário é obrigatório
+            if (!emailData.to || emailData.to.trim() === '') {
+                console.warn("⚠️ Falha ao enviar e-mail: Destinatário não definido. Verifique as Configurações.");
+                return;
+            }
+
+            // Fallback para AppID se não estiver setado no config (ex: reload rápido)
+            const targetUid = app.config.appId || (app.state.currentUser ? app.state.currentUser.id : null);
+
             const mailItem = {
                 id: app.utils.uuid(),
                 to: emailData.to,
@@ -167,24 +161,25 @@ window.app = {
                     text: emailData.body,
                     html: emailData.body.replace(/\n/g, '<br>')
                 },
-                status: 'pending',
+                status: 'pending', // Status inicial padrão para triggers Firebase
                 createdAt: new Date().toISOString(),
                 retryCount: 0
             };
 
-            if (this.db && app.config.appId) {
+            if (this.db && targetUid) {
                 try {
                     await this.db.collection('users')
-                        .doc(app.config.appId)
+                        .doc(targetUid)
                         .collection('mail_queue')
                         .doc(mailItem.id)
                         .set(mailItem);
-                    console.log("☁️ E-mail enviado para a fila da nuvem com sucesso.");
+                    console.log(`☁️ E-mail enfileirado com sucesso para: ${emailData.to}`);
                 } catch (e) {
                     console.error("Erro ao enfileirar e-mail (Cloud):", e);
+                    app.system.triggerAlert('Erro de E-mail', 'Falha ao conectar com o servidor de e-mail.', true);
                 }
             } else {
-                console.warn("Offline: E-mail não pôde ser enfileirado na nuvem instantaneamente.");
+                console.warn("Offline ou UID inválido: E-mail não pôde ser enfileirado.");
             }
         },
 
@@ -674,11 +669,17 @@ window.app = {
             if (hasAlert && settings.soundEnabled) this.playSound();
         },
 
+        // --- CORREÇÃO: Lógica de Data (Timezone) nos Lembretes ---
         checkReminders() {
             const reminders = app.db.get('reminders');
             const settings = app.db.getSettings();
             const now = new Date();
-            const todayStr = now.toISOString().split('T')[0];
+            
+            // CORREÇÃO: Usar horário local para definir "Hoje", não UTC
+            const offset = now.getTimezoneOffset() * 60000;
+            const localDate = new Date(now.getTime() - offset);
+            const todayStr = localDate.toISOString().split('T')[0];
+
             let updated = false;
 
             const cleanupDate = new Date();
@@ -704,6 +705,7 @@ window.app = {
                 const diffMs = targetTime - now;
                 const diffMin = Math.floor(diffMs / 60000); 
                 
+                // Comparação de dias (ignorando hora)
                 const dateOnlyTarget = new Date(r.date + 'T00:00:00');
                 const dateOnlyNow = new Date(todayStr + 'T00:00:00');
                 const diffDays = Math.ceil((dateOnlyTarget - dateOnlyNow) / (1000 * 60 * 60 * 24));
@@ -749,6 +751,7 @@ window.app = {
                     let shouldQueueEmail = false;
                     let emailType = '';
 
+                    // Lógica corrigida com diffDays baseado no Fuso Local
                     if (diffDays === cfg.lead && r.stats.lastEmailDate !== todayStr) {
                         shouldQueueEmail = true;
                         emailType = 'Antecipado';
@@ -779,6 +782,9 @@ window.app = {
                         
                         console.log(`📧 E-mail enfileirado: ${emailType} - ${r.name}`);
                         updated = true;
+                    } else if (shouldQueueEmail && !cfg.target) {
+                         // Aviso visual se tentar enviar e não tiver email configurado
+                         console.warn("Lembrete requer e-mail, mas nenhum destinatário configurado.");
                     }
                 }
             });
